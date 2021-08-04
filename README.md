@@ -15,14 +15,14 @@
 └───/graphs/
 |   │   dump.0.txt.gpickle
 |   │   ...
-│   └───csvs/
+│   └───/csvs/
 │           dump.0.txt.csv
 │           ...
 │   
 └───/components/
     │   dump.0.txt.gpickle
     │   ...
-    └───csvs/
+    └───/csvs/
             dump.0.txt.csv
             ...       
 ```

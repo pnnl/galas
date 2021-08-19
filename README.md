@@ -1,5 +1,12 @@
 # GALAS: Graph Analytics for Large Atomistic Simulations
 
+## Scripts
+* collect_neighbors.py
+* make_graphs.py
+* generate_components.py
+* collect_defect_atoms.py
+* collect_changed_defects.py
+
 ## Data Directory Structure
 ```
 ./data/  

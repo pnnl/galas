@@ -24,7 +24,7 @@ import os.path as op
 import gzip
 from ovito.io import import_file
 from ovito.data import CutoffNeighborFinder
-from ovito.modifiers import PolyhedralTemplateMatchingModifier
+from ovito.modifiers import PolyhedralTemplateMatchingModifier, VoronoiAnalysisModifier
 import numpy as np
 import pandas as pd
 import logging
@@ -70,6 +70,15 @@ for load_file in all_frames:
     try:
         pipeline = import_file(op.join(data_path, load_file))
         pipeline.modifiers.append(PolyhedralTemplateMatchingModifier())
+        
+        # Set up the Voronoi analysis modifier to compute atomic volumes
+        voro = VoronoiAnalysisModifier(
+            compute_indices = True,
+            use_radii = True,
+            edge_threshold = 0.1
+        )
+        pipeline.modifiers.append(voro)
+        
         data = pipeline.compute()
     except:
         logging.warning(f'... file could not be read by Ovito')
@@ -98,6 +107,7 @@ for load_file in all_frames:
     d={'idx': list(data.particles['Particle Identifier']), 
        'atom_type': list(data.particles['Particle Type']),
        'structure_type': list(data.particles['Structure Type']),
+       'atomic_volume': list(data.particles['Atomic Volume']),
        'x':[x[0] for x in data.particles['Position']],
        'y':[x[1] for x in data.particles['Position']],
        'z':[x[2] for x in data.particles['Position']]}

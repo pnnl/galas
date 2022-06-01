@@ -1,5 +1,7 @@
 # GALAS: Graph Analytics for Large Atomistic Simulations
 
+The graph-theoretical concept of connected components is employed to extract the evolution of defect configurations in large atomistic simulations. Building upon standard nearest neighbor analysis, graph theory and associated tools are used to reduce multi-million-atom systems into discrete component subgraphs that represent distinct structural defects. This method allows the automated identification, characterization, and tracking of defective regions within large volumes of data representing atomic-scale processes. Such analysis elucidates relationships between external stimuli and defect distributions, which have a large influence on material properties. 
+
 ## Scripts
 * ```collect_neighbors.py```: collect neighboring atom pairs from LAMMPS dumps
 * ```make_graphs.py```: create full graphs from neighbor pairs 

@@ -93,24 +93,29 @@ for load_file in all_frames:
     # Initialize neighbor finder object
     finder = CutoffNeighborFinder(cutoff, data)
 
-    # Find neighbors and write to file
-    f = gzip.open(op.join(args.path,neighbor_file), "wb")
+    # Find neighbors and accumulate into arrays
+    row, col, dist = [], [], []
     for index in range(data.particles.count):
-        # Iterate over neighbors of the current atom
         for neigh in finder.find(index):
-            str_to_write = f'{index} {neigh.index} {neigh.distance}\n'
-            f.write(bytes(str_to_write, encoding='utf8'))
-    f.close()
+            row.append(index)
+            col.append(neigh.index)
+            dist.append(neigh.distance)
+
+    # Bulk-write neighbor pairs to file
+    edges = np.column_stack((row, col, dist))
+    with gzip.open(op.join(args.path, neighbor_file), "wb") as f:
+        np.savetxt(f, edges, fmt='%d %d %.6f')
     logging.info(f'... neighbor pairs written as {neighbor_file}') 
 
     # Collect coordinate data for graph/csvs  
-    d={'idx': list(data.particles['Particle Identifier']), 
-       'atom_type': list(data.particles['Particle Type']),
-       'structure_type': list(data.particles['Structure Type']),
-       'atomic_volume': list(data.particles['Atomic Volume']),
-       'x':[x[0] for x in data.particles['Position']],
-       'y':[x[1] for x in data.particles['Position']],
-       'z':[x[2] for x in data.particles['Position']]}
+    pos = np.asarray(data.particles['Position'])
+    d={'idx': np.asarray(data.particles['Particle Identifier']), 
+       'atom_type': np.asarray(data.particles['Particle Type']),
+       'structure_type': np.asarray(data.particles['Structure Type']),
+       'atomic_volume': np.asarray(data.particles['Atomic Volume']),
+       'x': pos[:, 0],
+       'y': pos[:, 1],
+       'z': pos[:, 2]}
     df = pd.DataFrame(d)
     df.to_csv(op.join(args.path, csv_file), index=False)
     logging.info(f'... coordinate data written to {csv_file}')

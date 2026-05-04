@@ -52,3 +52,44 @@ The GALAS codebase was applied to atomic structures obtained from a molecular dy
 J. A. Bilbrey, N. Chen, S. Hu, P. V. Sushko, Graph-component approach to defect identification in large atomistic simulations, <em>Computational Materials Science</em>, 214, 2022.
 DOI: [10.1016/j.commatsci.2022.111700](https://www.sciencedirect.com/science/article/pii/S0927025622004244?dgcid=author)
 
+
+## Copilot Skill: Automated Defect Analysis
+
+A GitHub Copilot skill is included that can run the full GALAS pipeline and produce a defect report automatically via the chat interface.
+
+### What it does
+
+The skill guides an AI agent through the complete analysis workflow:
+
+1. **Neighbor collection** — reads LAMMPS dump files, classifies atoms by structure type (PTM/CNA), and finds nearest-neighbor pairs within a cutoff radius.
+2. **Graph construction** — builds a NetworkX graph for each frame where atoms are nodes and neighbor pairs are edges weighted by distance.
+3. **Component extraction** — removes ideally-coordinated atoms and decomposes the remaining defect graph into connected components. The largest component is the grain boundary superstructure (GBS); all others are individual in-grain defects.
+4. **Defect classification** — matches each component's (node count, edge count) signature against known defect templates (mono-vacancies, di-vacancies, tri-vacancies, etc.).
+5. **Trajectory tracking** — follows defect atoms across frames to detect migration, recombination, or merging.
+6. **Reporting** — prints a summary table of defect counts by type, generates matplotlib plots (component size distributions, defect evolution over time, GBS vs. in-grain vertex changes), and logs each individual defect with its location and classification.
+
+### How to use it
+
+In VS Code with GitHub Copilot Chat, type `/gala-analysis` and provide your parameters. Examples:
+
+```
+/gala-analysis Analyze ./data/ for FCC Al with lattice constant 4.0559
+```
+
+```
+/gala-analysis Run single-frame defect analysis on ./data/dumps/dump.0.txt using PTM
+```
+
+```
+/gala-analysis Process the full trajectory in ./data/ and report defect changes over time
+```
+
+The skill supports FCC, BCC, and HCP lattices with built-in defaults and produces:
+- A defect type breakdown table with total counts
+- Individual defect log (component index, node/edge counts, classified type)
+- For trajectories: plots of defect count evolution, GBS size changes, and component distributions
+
+### Requirements
+
+The skill requires the same dependencies as the core GALAS scripts: `ovito`, `networkx`, `numpy`, `pandas`, `matplotlib`, and `tqdm`.
+

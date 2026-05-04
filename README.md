@@ -9,6 +9,7 @@ The graph-theoretical concept of connected components is employed to extract the
 * ```generate_components.py```: break full graphs into components representing defect regions
 * ```collect_defect_atoms.py```: aggregate all defects of a certain type
 * ```collect_changed_defects.py```: collect defects that changed neighbors over the course of the simulation
+* ```defect_ordering.py```: compute spatial ordering metrics (RDF, nearest-neighbor distributions, Warren-Cowley SRO parameters, structure factor) for defect centers grouped by type
 
 ## Data Directory Structure
 
@@ -39,7 +40,14 @@ The data directory structure and corresponding files types are as follows. Prior
     │   ...
     └───/csvs/
             dump.0.txt.csv
-            ...       
+            ...
+
+└───/ordering/
+        rdf_Mono-vacancy.csv
+        nn_dist_Mono-vacancy.csv
+        sq_Mono-vacancy.csv
+        warren_cowley.csv
+        ...
 ```
 
 ## MD simulation of severe shear deformation in polycrystalline Al

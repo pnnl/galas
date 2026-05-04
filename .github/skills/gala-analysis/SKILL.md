@@ -150,7 +150,30 @@ python collect_changed_defects.py --path <data_path> --start 0 --n_nodes 12 --n_
 - Identifies atoms whose neighbor count changed over the simulation (indicating defect migration, recombination, or transformation)
 - Writes per-defect CSV with full trajectory data to `<data_path>/defects/`
 
-### Step 6: Alternative — single-structure analysis via MaterialGraph class
+### Step 6: Defect spatial ordering analysis
+
+Run [defect_ordering.py](./../../defect_ordering.py):
+
+```
+python defect_ordering.py --path <data_path> --lattice_constant <lattice_constant>
+```
+
+**What it does:**
+- Computes defect centroids (center of mass of each component's atom positions), grouped by defect type
+- **RDF**: Computes the radial distribution function $g(r)$ for defect centers, both per-type and combined. Peaks above $g(r)=1$ indicate preferred defect-defect spacings.
+- **Nearest-neighbor distribution**: Histograms of first nearest-neighbor distances per defect type, compared against the random Hertz distribution. Shifts toward shorter distances indicate clustering; longer distances indicate repulsion.
+- **Warren-Cowley SRO parameters**: Computes $\alpha_{ij}^{(n)} = 1 - p_{ij}^{(n)}/c_j$ for each pair of defect types across $n$ neighbor shells. $\alpha < 0$ means unlike defects attract (ordering), $\alpha > 0$ means like defects segregate.
+- **Structure factor $S(q)$**: Radially-averaged structure factor via the Debye formula. Sharp peaks indicate long-range periodic ordering (defect superlattice); broad maxima indicate short-range correlations only.
+- Writes CSV data to `<data_path>/ordering/` and figures to `<data_path>/figures/`
+
+Optional arguments:
+- `--rdf_rmax`: maximum radius for RDF (default: 60 Å)
+- `--rdf_bins`: number of RDF bins (default: 300)
+- `--sq_qmax`: maximum q for S(q) (default: 2.0 Å⁻¹)
+- `--sro_shells`: number of neighbor shells for Warren-Cowley (default: 5)
+- `--sro_shell_width`: shell width in Å (default: auto = 1.5 × lattice constant)
+
+### Step 7: Alternative — single-structure analysis via MaterialGraph class
 
 For a single structure (not a trajectory), use [material_graph_class.py](./../../material_graph_class.py):
 

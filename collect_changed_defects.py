@@ -49,7 +49,7 @@ for c in component:
     df_all=pd.DataFrame()
 
     data_path = op.join(args.path, 'graphs')
-    all_frames=sorted([f for f in os.listdir(data_path) if op.isfile(op.join(data_path, f))])
+    all_frames=sorted([f for f in os.listdir(data_path) if f.endswith('.npz')])
 
     for structure in sorted([int(x.split('.')[n]) for x in all_frames]):
         # load dataframe from next time step

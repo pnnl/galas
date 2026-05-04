@@ -24,7 +24,7 @@ import os.path as op
 import gzip
 import numpy as np
 import pandas as pd
-import networkx as nx
+from scipy.sparse import coo_matrix, save_npz
 import logging
 import argparse
 
@@ -47,7 +47,7 @@ logging.info(f'{len(all_frames)} to total frames in {data_path}')
 for load_file in all_frames:
     # Define file names
     neighbor_file = op.join('neighbors', load_file + '.neighbors.txt.gz')
-    graph_file = op.join('graphs', load_file + '.gpickle')
+    graph_file = op.join('graphs', load_file + '.npz')
     csv_file = op.join('graphs/csvs', load_file + '.csv')
 
     logging.info(f'Creating graph from {neighbor_file}')
@@ -59,42 +59,52 @@ for load_file in all_frames:
         logging.warning('... coordinate data not found')
         df=pd.DataFrame()
        
-    # Create graph and store as gpickle
+    # Read edge list and build sparse adjacency matrix
     try:
-        G=nx.read_edgelist(gzip.open(op.join(args.path,neighbor_file), "rb"),
-                           nodetype=int, data=(("weight", float),))
-        nx.write_gpickle(G, op.join(args.path, graph_file))
-        logging.info(f'... gpickle stored at {graph_file}')
+        edges = pd.read_csv(gzip.open(op.join(args.path, neighbor_file), "rb"),
+                            sep=' ', header=None, names=['src', 'dst', 'weight'])
+        n_atoms = len(df) if len(df) > 0 else int(edges[['src','dst']].max().max()) + 1
+        A = coo_matrix((edges['weight'].values, (edges['src'].values, edges['dst'].values)),
+                       shape=(n_atoms, n_atoms))
+        A_csr = A.tocsr()
+        save_npz(op.join(args.path, graph_file), A_csr)
+        logging.info(f'... sparse matrix stored at {graph_file}')
     except:
         logging.warning(f'... failed to read {neighbor_file}')
         continue
 
     # Write neighbor info to csv
-    df['n_neighbors'] = [x[1] for x in sorted(list(G.degree()))] 
-    df['summed_neighbor_distances'] = [x[1] for x in sorted(list(G.degree(weight='weight')))] 
+    df['n_neighbors'] = np.diff(A_csr.indptr)
+    df['summed_neighbor_distances'] = np.asarray(A_csr.sum(axis=1)).flatten()
     df['norm_distances'] = df['summed_neighbor_distances']/df['n_neighbors']
     
     # Optional computation of additional graph properties
-    if extra:
+    if args.extra:
+        import networkx as nx
+        from scipy.stats import skew
+        G = nx.from_scipy_sparse_array(A_csr)
+
         # Compute number of triangles for each atom
         df['triangles']=df['idx'].apply(lambda x: nx.triangles(G, x))
 
         # Compute stats for neighbor distance (graph edge weight)
         weights = [[x[1]['weight'] for x in G[comp].items()] 
-                   for comp in df['idx'].sort_values('idx').tolist()]
+                   for comp in df['idx'].sort_values().tolist()]
         df['weight_mean']=df['idx'].apply(lambda x: np.array(weights[x]).mean()) 
         df['weight_std']=df['idx'].apply(lambda x: np.array(weights[x]).std())
         df['weight_skew']=df['idx'].apply(lambda x: skew(weights[x]))
 
         # Compute stats for number of neighbors (graph node degree)
         degrees = [[G.degree[node] for node in [x for x in G.neighbors(comp)]] 
-                   for comp in df['idx'].sort_values('idx').tolist()]
+                   for comp in df['idx'].sort_values().tolist()]
         df['neighbor_degree_mean']=df['idx'].apply(lambda x: np.array(degrees[x]).mean())
         df['neighbor_degree_std']=df['idx'].apply(lambda x: np.array(degrees[x]).std())
         df['neighbor_degree_skew']=df['idx'].apply(lambda x: skew(degrees[x]))
+
+        G.clear()
     
     df.to_csv(op.join(args.path, csv_file), index=False)
     logging.info(f'... info written to {csv_file}')
 
-    # Clear graph from memory
-    G.clear()
+    # Free memory
+    del A, A_csr

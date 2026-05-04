@@ -24,7 +24,6 @@ import pandas as pd
 import os
 import os.path as op
 import pickle
-import networkx as nx
 import logging
 import argparse
 
@@ -43,24 +42,31 @@ if not op.isdir(op.join(args.path, 'defects')):
     os.mkdir(op.join(args.path, 'defects'))
 
 data_path = op.join(args.path, 'graphs')
-all_frames=sorted([f for f in os.listdir(data_path) if op.isfile(op.join(data_path, f))])
+all_frames=sorted([f for f in os.listdir(data_path) if f.endswith('.npz')])
 
 # load dataframe from t0
-df=pd.read_csv(op.join(data_path, 'csvs', all_frames[args.start].replace('gpickle','csv')))
+df=pd.read_csv(op.join(data_path, 'csvs', all_frames[args.start].replace('.npz','.csv')))
 
-# load components graph
-F = nx.read_gpickle(op.join(data_path.replace('graphs','components'), all_frames[args.start]))
-components = sorted(nx.connected_components(F), key=len, reverse=True)
-F.clear()
+# load component metadata (defect indices and sorted labels)
+meta = np.load(op.join(args.path, 'components', all_frames[args.start].replace('.npz', '.meta.npz')))
+defect_indices = meta['defect_indices']
+labels = meta['labels']
+
+# Reconstruct components as lists of original atom indices, sorted by size (largest first)
+n_comp = labels.max() + 1
+components = []
+for comp_id in range(n_comp):
+    original_indices = defect_indices[labels == comp_id]
+    components.append(original_indices.tolist())
 
 # gather component info
-info = pd.read_csv(op.join(data_path.replace('graphs','components/csvs'), all_frames[args.start].replace('gpickle','csv')))
+info = pd.read_csv(op.join(args.path, 'components', 'csvs', all_frames[args.start].replace('.npz','.csv')))
 
 # get all single vacancies
 defect_index = info.loc[(info.Nodes==args.n_nodes)&(info.Edges==args.n_edges)].Component.tolist()
 
 defect_dict={}
 for d_index in defect_index:
-    defect_dict[d_index] = list(components[d_index])
+    defect_dict[d_index] = components[d_index]
 with open(op.join(args.path, 'defects', f'defect_dict_{args.n_nodes}nodes_{args.n_edges}edges_startat{args.start}.pickle'), 'wb') as handle:
     pickle.dump(defect_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)

@@ -23,7 +23,8 @@ import os
 import os.path as op
 import numpy as np
 import pandas as pd
-import networkx as nx
+from scipy.sparse import load_npz, save_npz
+from scipy.sparse.csgraph import connected_components
 import logging
 import argparse
 
@@ -36,7 +37,7 @@ args = parser.parse_args()
 
 # Collect all graphs
 data_path = op.join(args.path, 'graphs')
-all_frames = [f for f in os.listdir(data_path)]
+all_frames = [f for f in os.listdir(data_path) if f.endswith('.npz')]
 logging.info(f'{len(all_frames)} to total frames in {data_path}')
 
 all_component_path = op.join(args.path, 'all_component_data.csv')
@@ -45,66 +46,110 @@ with open(all_component_path, 'w') as f:
     
 # Read through graph files and generate components
 for frame in all_frames:
-    # Load graph
+    # Load sparse adjacency matrix
     logging.info(f'Loading graph from {frame}')
     try:
-        G = nx.read_gpickle(frame)
+        A = load_npz(op.join(data_path, frame))
     except:
         logging.warning('... graph could not be read')
         continue
         
-    n_nodes = G.number_of_nodes()
-    n_edges = G.number_of_edges()
+    n_nodes = A.shape[0]
+    n_edges = A.nnz // 2  # each edge stored in both directions
 
-    # Lad graph data
-    info_path = frame.replace('gpickle','csv').replace('graphs/','graphs/csvs/')
+    # Load graph data
+    info_path = op.join(data_path, 'csvs', frame.replace('.npz', '.csv'))
     try:
-        df=pd.read_csv(info_path)
+        df = pd.read_csv(info_path)
     except:
         logging.warning(f'... graph info could not be read from {info_path}')
         continue
 
-    # Remove nodes with ideal number of neighbors
-    nodes_to_remove = list(df.loc[df['n_neighbors']==args.ideal_neighbors].index)
-    G.remove_nodes_from(nodes_to_remove)
+    # Identify defect atoms (non-ideal neighbor count)
+    defect_mask = df['n_neighbors'].values != args.ideal_neighbors
+    defect_indices = np.where(defect_mask)[0]
 
-    # Save full component subgraph
-    component_path = frame.replace('graphs/','components/')
-    nx.write_gpickle(G, component_path)
+    # Extract defect subgraph (sparse submatrix)
+    A_defect = A[defect_indices][:, defect_indices]
+
+    # Save defect subgraph as sparse matrix
+    component_path = op.join(args.path, 'components', frame)
+    save_npz(component_path, A_defect.tocsr())
     logging.info(f'... component graph written to {component_path}')
-              
-    # Collect info on each atom in component
-    a,b,c,d,e,f,g=[],[],[],[],[],[],[]
-    d_std,e_std,f_std,g_std=[],[],[],[]
-    n_components = 0
-    for idx,g in enumerate([G.subgraph(c).copy() for c in sorted(nx.connected_components(G), key=len, reverse=True)]):
-        nodes_to_keep = list(g.nodes())
-        a.append(idx)
-        b.append(g.number_of_nodes())
-        c.append(g.number_of_edges())
-        d.append(np.array([x[1] for x in g.degree()]).mean())
-        d_std.append(np.array([x[1] for x in g.degree()]).std())
-        e.append(np.array([x[1] for x in g.degree(weight='weight')]).mean())
-        e_std.append(np.array([x[1] for x in g.degree(weight='weight')]).std())
-        f.append(df.iloc[nodes_to_keep][f'summed_neighbor_distances'].to_numpy().mean())
-        f_std.append(df.iloc[nodes_to_keep][f'summed_neighbor_distances'].to_numpy().std())
-        g.append(df.iloc[nodes_to_keep][f'n_neighbors'].to_numpy().mean())
-        g_std.append(df.iloc[nodes_to_keep][f'n_neighbors'].to_numpy().std())
-        n_components += 1
-        
+
+    # Find connected components using scipy (much faster than NetworkX)
+    n_comp, labels = connected_components(A_defect, directed=False)
+
+    # Sort components by size (largest first) and relabel
+    component_sizes = np.bincount(labels, minlength=n_comp)
+    sorted_comp_ids = np.argsort(-component_sizes)
+    label_map = np.empty(n_comp, dtype=int)
+    label_map[sorted_comp_ids] = np.arange(n_comp)
+    sorted_labels = label_map[labels]
+
+    # Save component metadata (defect indices and labels) for downstream use
+    meta_path = op.join(args.path, 'components', frame.replace('.npz', '.meta.npz'))
+    np.savez(meta_path, defect_indices=defect_indices, labels=sorted_labels)
+
+    # Collect info on each component
+    comp_ids, comp_nodes, comp_edges = [], [], []
+    deg_mean, deg_std, wdeg_mean, wdeg_std = [], [], [], []
+    full_deg_mean, full_deg_std, full_wdeg_mean, full_wdeg_std = [], [], [], []
+
+    # Precompute degree arrays for the defect subgraph
+    A_defect_csr = A_defect.tocsr()
+    sub_degrees = np.diff(A_defect_csr.indptr)
+    sub_weighted_degrees = np.asarray(A_defect_csr.sum(axis=1)).flatten()
+
+    for comp_id in range(n_comp):
+        # Get local indices within defect subgraph for this component
+        local_mask = sorted_labels == comp_id
+        local_indices = np.where(local_mask)[0]
+        original_indices = defect_indices[local_indices]
+
+        # Node and edge count for this component
+        comp_sub = A_defect_csr[local_indices][:, local_indices]
+        n_comp_nodes = len(local_indices)
+        n_comp_edges = comp_sub.nnz // 2
+
+        comp_ids.append(comp_id)
+        comp_nodes.append(n_comp_nodes)
+        comp_edges.append(n_comp_edges)
+
+        # Degree stats within the defect subgraph
+        comp_degrees = sub_degrees[local_indices]
+        deg_mean.append(comp_degrees.mean())
+        deg_std.append(comp_degrees.std())
+
+        # Weighted degree stats within the defect subgraph
+        comp_wdegrees = sub_weighted_degrees[local_indices]
+        wdeg_mean.append(comp_wdegrees.mean())
+        wdeg_std.append(comp_wdegrees.std())
+
+        # Stats from the full graph (stored in CSV)
+        full_deg_mean.append(df.iloc[original_indices]['summed_neighbor_distances'].mean())
+        full_deg_std.append(df.iloc[original_indices]['summed_neighbor_distances'].std())
+        full_wdeg_mean.append(df.iloc[original_indices]['n_neighbors'].mean())
+        full_wdeg_std.append(df.iloc[original_indices]['n_neighbors'].std())
+
     # Write component info csv   
-    component_info_path = frame.replace('gpickle','csv').replace('graphs/','components/csvs/')
-    info=pd.DataFrame({'Component':a,'Nodes':b,'Edges':c,'MeanDegree_sub':d, 'MeanDegree_sub_std':d_std, 
-                       'MeanWDegree_sub':e, 'MeanWDegree_sub_std':e_std, 'MeanDegree_full':f, 
-                       'MeanDegree_full_std':f_std, 'MeanWDegree_full':g, 'MeanWDegree_full_std':g_std})
+    component_info_path = op.join(args.path, 'components', 'csvs', frame.replace('.npz', '.csv'))
+    info = pd.DataFrame({
+        'Component': comp_ids, 'Nodes': comp_nodes, 'Edges': comp_edges,
+        'MeanDegree_sub': deg_mean, 'MeanDegree_sub_std': deg_std,
+        'MeanWDegree_sub': wdeg_mean, 'MeanWDegree_sub_std': wdeg_std,
+        'MeanDegree_full': full_deg_mean, 'MeanDegree_full_std': full_deg_std,
+        'MeanWDegree_full': full_wdeg_mean, 'MeanWDegree_full_std': full_wdeg_std
+    })
     info.to_csv(component_info_path, index=False)
     logging.info(f'... detailed component graph info written to {component_info_path}')
 
     # Write data for each component
+    largest = comp_nodes[0] if comp_nodes else 0
     with open(all_component_path, 'a') as f:
-        f.write(f"{frame},{n_nodes},{n_edges},{n_components},{max(b)}\n")
+        f.write(f"{frame},{n_nodes},{n_edges},{n_comp},{largest}\n")
     logging.info(f'... component info written to {all_component_path}')
-        
-    # Clear graph to free memory
-    G.clear()
+
+    # Free memory
+    del A, A_defect, A_defect_csr
 
